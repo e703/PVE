@@ -161,8 +161,14 @@ pvehelp(){
 
     [[ -e /etc/apt/sources.list.d/pve-no-subscription.list ]] && cp -rf /etc/apt/sources.list.d/pve-no-subscription.list /etc/apt/backup/pve-no-subscription.list.bak
 
+	# PVE9 (trixie) 起清华镜像路径改为 /proxmox/debian/pve
+	if [[ "${sver}" == "trixie" ]]; then
+		pve_repo_path="https://mirrors.tuna.tsinghua.edu.cn/proxmox/debian/pve"
+	else
+		pve_repo_path="https://mirrors.tuna.tsinghua.edu.cn/proxmox/debian"
+	fi
 	cat > /etc/apt/sources.list.d/pve-no-subscription.list <<-EOF
-deb https://mirrors.tuna.tsinghua.edu.cn/proxmox/debian ${sver} pve-no-subscription
+deb ${pve_repo_path} ${sver} pve-no-subscription
 EOF
 	TIME g "使用帮助源，更换完成!"
 }
@@ -193,7 +199,13 @@ novalidsub(){
 }
 pvegpg(){
 	[[ -e /etc/apt/trusted.gpg.d/proxmox-release-${sver}.gpg ]] && mv /etc/apt/trusted.gpg.d/proxmox-release-${sver}.gpg /etc/apt/backup/proxmox-release-${sver}.gpg.bak
-	wget -q --timeout=5 --tries=1 --show-progres http://mirrors.tuna.tsinghua.edu.cn/proxmox/debian/proxmox-release-${sver}.gpg -O /etc/apt/trusted.gpg.d/proxmox-release-${sver}.gpg
+	# PVE9 (trixie) 起清华镜像路径改为 /proxmox/debian/pve
+	if [[ "${sver}" == "trixie" ]]; then
+		pve_gpg_url="https://mirrors.tuna.tsinghua.edu.cn/proxmox/debian/pve/proxmox-release-${sver}.gpg"
+	else
+		pve_gpg_url="http://mirrors.tuna.tsinghua.edu.cn/proxmox/debian/proxmox-release-${sver}.gpg"
+	fi
+	wget -q --timeout=5 --tries=1 --show-progres ${pve_gpg_url} -O /etc/apt/trusted.gpg.d/proxmox-release-${sver}.gpg
 	if [[ $? -ne 0 ]];then
 		TIME r "尝试重新下载..."
 		wget -q --timeout=5 --tries=1 --show-progres https://raw.githubusercontent.com/xiangfeidexiaohuo/pve-diy/master/gpg/proxmox-release-${sver}.gpg -O /etc/apt/trusted.gpg.d/proxmox-release-${sver}.gpg
@@ -1233,75 +1245,7 @@ fi
 #--------------CPU、主板、硬盘温度显示----------------
 
 
-#--------------一键卸载旧内核----------------
-remove_kernel(){
 
-YW="\033[33m"
-GN="\033[1;92m"
-RD="\033[01;31m"
-CL="\033[m"
-
-echo -e "${RD}此操作非常危险，风险自行承担！！！${CL}"
-echo -e "${RD}操作不当会引起系统崩溃，请知悉！${CL}"
-
-current_kernel=$(uname -r)
-available_kernels=$(dpkg --list | grep 'kernel-.*-pve' | awk '{print $2}' | grep -v "$current_kernel" | sort -V)
-
-if [ -z "$available_kernels" ]; then
-  echo -e "${GN}未检测到旧内核，当前内核: ${current_kernel}${CL}"
-  exit 0
-fi
-
-echo -e "${YW}可供移除的内核:${CL}"
-echo "$available_kernels" | nl -w 2 -s '. '
-
-echo -e "\n${YW}选择要删除的内核（以逗号分隔，例如 1,2）:${CL}"
-read -r selected
-
-# Parse selection
-IFS=',' read -r -a selected_indices <<<"$selected"
-kernels_to_remove=()
-
-for index in "${selected_indices[@]}"; do
-  kernel=$(echo "$available_kernels" | sed -n "${index}p")
-  if [ -n "$kernel" ]; then
-    kernels_to_remove+=("$kernel")
-  fi
-done
-
-if [ ${#kernels_to_remove[@]} -eq 0 ]; then
-  echo -e "${RD}未做出有效选择，退出。${CL}"
-  exit 1
-fi
-
-# Confirm removal
-echo -e "${YW}待移除的内核:${CL}"
-printf "%s\n" "${kernels_to_remove[@]}"
-read -rp "继续删除吗？(y/n): " confirm
-if [[ "$confirm" != "y" ]]; then
-  echo -e "${RD}已中止${CL}"
-  exit 1
-fi
-
-# Remove kernels
-for kernel in "${kernels_to_remove[@]}"; do
-  echo -e "${YW}移除 $kernel...${CL}"
-  if apt-get purge -y "$kernel" >/dev/null 2>&1; then
-    echo -e "${GN}已成功移除: $kernel${CL}"
-  else
-    echo -e "${RD}删除失败: $kernel ，检查依赖关系。${CL}"
-  fi
-done
-
-# Clean up and update GRUB
-echo -e "${YW}清理中...${CL}"
-apt-get autoremove -y >/dev/null 2>&1 && update-grub >/dev/null 2>&1
-echo -e "${GN}清理和 GRUB 更新完成。${CL}"
-
-
-}
-
-#--------------一键卸载旧内核----------------
 
 
 # 主菜单
@@ -1318,7 +1262,6 @@ menu(){
     6. PVE8/9添加ceph-squid源
     7. PVE7/8添加ceph-quincy源
     8. 一键卸载ceph
-    9. 一键卸载旧内核(危险，谨慎操作！)
 ├──────────────────────────────────────────┤
     0. 退出
 └──────────────────────────────────────────┘
@@ -1372,12 +1315,6 @@ EOF
 	;;
 	8)
 		remove_ceph
-		echo
-		pause
-		menu
-	;;
-	9)
-		remove_kernel
 		echo
 		pause
 		menu
